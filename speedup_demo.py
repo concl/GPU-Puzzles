@@ -15,7 +15,7 @@ def add_arrays_numpy(a, b):
 
 def main():
     
-    n = 10**9
+    n = 10**8
     a = np.random.rand(n).astype(np.float32)
     b = np.random.rand(n).astype(np.float32)
     c = np.empty_like(a)
