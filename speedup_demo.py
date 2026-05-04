@@ -4,6 +4,8 @@ from numba import cuda
 import numba
 import numpy as np
 import time
+from naive_cpp_matmul import matmul as matmul_optimized, matmul_tiled, matmul_naive
+
 
 @jit
 def add_arrays(a, b, c):
@@ -26,23 +28,24 @@ def matrix_multiply(a, b, out):
     b_shared = cuda.shared.array((TPB, TPB), numba.float32)
     out_shared = cuda.shared.array((TPB, TPB), numba.float32)
     
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
+    i = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
+    j = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
     
-    local_i = cuda.threadIdx.x
-    local_j = cuda.threadIdx.y
+    local_i = cuda.threadIdx.y
+    local_j = cuda.threadIdx.x
+    
 
     out_shared[local_i, local_j] = 0.0
     for curr_block in range(min((size_a_cols + TPB - 1) // TPB, (size_b_rows + TPB - 1) // TPB)):
         if i < size_a_rows and (j % TPB + curr_block * TPB) < size_b_cols:
             a_shared[local_i, local_j] = a[i, j % TPB + curr_block * TPB]
         else:
-            a_shared[local_i, local_j] = 0
+            a_shared[local_i, local_j] = 0.0
             
         if j < size_b_rows and (i % TPB + curr_block * TPB) < size_a_cols:
             b_shared[local_i, local_j] = b[i % TPB + curr_block * TPB, j]
         else:
-            b_shared[local_i, local_j] = 0
+            b_shared[local_i, local_j] = 0.0
         cuda.syncthreads()
         
         if i < size_a_rows and j < size_b_cols:
@@ -60,8 +63,8 @@ def matmul(a, b, out):
     size_b_rows, size_b_cols = b.shape
     
     threads_per_block = (TPB, TPB)
-    blocks_per_grid_x = (size_a_rows + threads_per_block[0] - 1) // threads_per_block[0]
-    blocks_per_grid_y = (size_b_cols + threads_per_block[1] - 1) // threads_per_block[1]
+    blocks_per_grid_x = (size_b_cols + TPB - 1) // TPB
+    blocks_per_grid_y = (size_a_rows + TPB - 1) // TPB
     
     matrix_multiply[(blocks_per_grid_x, blocks_per_grid_y), threads_per_block](a, b, out)
         
@@ -112,8 +115,8 @@ def test_add_arrays():
 def test_matrix_multiply():
     print("Testing matrix_multiply...")
     
-    size_a_rows, size_a_cols = 1024, 1024
-    size_b_rows, size_b_cols = 1024, 1024
+    size_a_rows, size_a_cols = 1024, 2048
+    size_b_rows, size_b_cols = 2048, 1024
     
     a = np.random.rand(size_a_rows, size_a_cols).astype(np.float32)
     b = np.random.rand(size_b_rows, size_b_cols).astype(np.float32)
@@ -141,7 +144,27 @@ def test_matrix_multiply():
     
     print(f"Numpy matrix multiplication time: {end_time - start_time}s")
     
+    # start_time = time.perf_counter()
+    # out_cpp_naive = matmul_naive(a, b)
+    # end_time = time.perf_counter()
+    # print(f"C++ matrix multiplication time (naive): {end_time - start_time}s")
+    
+    
+    start_time = time.perf_counter()
+    out_cpp_tiled = matmul_tiled(a, b)
+    end_time = time.perf_counter()
+    print(f"C++ matrix multiplication time (tiled): {end_time - start_time}s")
+    
+    start_time = time.perf_counter()
+    out_cpp = matmul_optimized(a, b)
+    end_time = time.perf_counter()
+    print(f"C++ matrix multiplication time (optimized): {end_time - start_time}s")
+    
+
+    
     assert np.allclose(out_gpu, out_numpy), "Results do not match!"
+    assert np.allclose(out_gpu, out_cpp), "Results do not match!"
+    
 
 def main():
     

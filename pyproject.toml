@@ -10,4 +10,10 @@ dependencies = [
     "numba-cuda>=0.30.1",
     "numpy>=2.4.4",
     "pip>=26.1",
+    "naive-cpp-matmul",
 ]
+
+[tool.uv.sources]
+naive-cpp-matmul = { path = "./naive_cpp_matmul_src", editable = true }
+
+
