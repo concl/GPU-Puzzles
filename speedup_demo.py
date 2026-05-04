@@ -32,17 +32,16 @@ def matrix_multiply(a, b, out):
     
     local_i = cuda.threadIdx.y
     local_j = cuda.threadIdx.x
-    
 
     tmp = numba.float32(0.0)
-    for curr_block in range(max((size_a_cols + TPB - 1) // TPB, (size_b_rows + TPB - 1) // TPB)):
-        if i < size_a_rows and (j % TPB + curr_block * TPB) < size_a_cols:
-            a_shared[local_i, local_j] = a[i, j % TPB + curr_block * TPB]
+    for curr_block in range((size_a_cols + TPB - 1) // TPB):
+        if i < size_a_rows and (local_j + curr_block * TPB) < size_a_cols:
+            a_shared[local_i, local_j] = a[i, local_j + curr_block * TPB]
         else:
             a_shared[local_i, local_j] = 0.0
             
-        if j < size_b_cols and (i % TPB + curr_block * TPB) < size_b_rows:
-            b_shared[local_i, local_j] = b[i % TPB + curr_block * TPB, j]
+        if j < size_b_cols and (local_i + curr_block * TPB) < size_b_rows:
+            b_shared[local_i, local_j] = b[local_i + curr_block * TPB, j]
         else:
             b_shared[local_i, local_j] = 0.0
         cuda.syncthreads()
@@ -57,8 +56,11 @@ def matrix_multiply(a, b, out):
         out[i, j] = tmp  
     
 def matmul(a, b, out):
+    
     size_a_rows, size_a_cols = a.shape
     size_b_rows, size_b_cols = b.shape
+    
+    assert size_a_cols == size_b_rows, "Inner dimensions must match for matrix multiplication"
     
     threads_per_block = (TPB, TPB)
     blocks_per_grid_x = (size_b_cols + TPB - 1) // TPB
@@ -113,8 +115,8 @@ def test_add_arrays():
 def test_matrix_multiply():
     print("Testing matrix_multiply...")
     
-    size_a_rows, size_a_cols = 1024, 2048
-    size_b_rows, size_b_cols = 2048, 1024
+    size_a_rows, size_a_cols = 1024, 1024
+    size_b_rows, size_b_cols = 1024, 1024
     
     a = np.random.rand(size_a_rows, size_a_cols).astype(np.float32)
     b = np.random.rand(size_b_rows, size_b_cols).astype(np.float32)
@@ -142,11 +144,10 @@ def test_matrix_multiply():
     
     print(f"Numpy matrix multiplication time: {end_time - start_time}s")
     
-    # start_time = time.perf_counter()
-    # out_cpp_naive = matmul_naive(a, b)
-    # end_time = time.perf_counter()
-    # print(f"C++ matrix multiplication time (naive): {end_time - start_time}s")
-    
+    start_time = time.perf_counter()
+    out_cpp_naive = matmul_naive(a, b)
+    end_time = time.perf_counter()
+    print(f"C++ matrix multiplication time (naive): {end_time - start_time}s")
     
     start_time = time.perf_counter()
     out_cpp_tiled = matmul_tiled(a, b)
@@ -157,7 +158,6 @@ def test_matrix_multiply():
     out_cpp = matmul_optimized(a, b)
     end_time = time.perf_counter()
     print(f"C++ matrix multiplication time (optimized): {end_time - start_time}s")
-    
 
     
     assert np.allclose(out_gpu, out_numpy), "Results do not match!"
