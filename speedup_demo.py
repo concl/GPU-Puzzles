@@ -4,6 +4,7 @@ from numba import cuda
 import numba
 import numpy as np
 import time
+import warnings
 
 @jit
 def add_arrays(a, b, c):
@@ -15,7 +16,6 @@ def add_arrays_numpy(a, b):
     return a + b
 
 TPB = 32
-
 @jit
 def matrix_multiply(a, b, out):
     
@@ -33,13 +33,13 @@ def matrix_multiply(a, b, out):
     local_j = cuda.threadIdx.y
 
     out_shared[local_i, local_j] = 0.0
-    for curr_block in range(min((size_a_cols + TPB - 1) // TPB, (size_b_rows + TPB - 1) // TPB)):
-        if i < size_a_rows and (j % TPB + curr_block * TPB) < size_b_cols:
+    for curr_block in range(max((size_a_cols + TPB - 1) // TPB, (size_b_rows + TPB - 1) // TPB)):
+        if i < size_a_rows and (j % TPB + curr_block * TPB) < size_a_cols:
             a_shared[local_i, local_j] = a[i, j % TPB + curr_block * TPB]
         else:
             a_shared[local_i, local_j] = 0
             
-        if j < size_b_rows and (i % TPB + curr_block * TPB) < size_a_cols:
+        if j < size_b_cols and (i % TPB + curr_block * TPB) < size_b_rows:
             b_shared[local_i, local_j] = b[i % TPB + curr_block * TPB, j]
         else:
             b_shared[local_i, local_j] = 0
@@ -112,8 +112,8 @@ def test_add_arrays():
 def test_matrix_multiply():
     print("Testing matrix_multiply...")
     
-    size_a_rows, size_a_cols = 1024, 1024
-    size_b_rows, size_b_cols = 1024, 1024
+    size_a_rows, size_a_cols = 3525, 128
+    size_b_rows, size_b_cols = 128, 4362
     
     a = np.random.rand(size_a_rows, size_a_cols).astype(np.float32)
     b = np.random.rand(size_b_rows, size_b_cols).astype(np.float32)
@@ -144,6 +144,9 @@ def test_matrix_multiply():
     assert np.allclose(out_gpu, out_numpy), "Results do not match!"
 
 def main():
+    # suppress warnings about CUDA initialization
+    
+    warnings.filterwarnings("ignore", category=UserWarning, module="numba.cuda")
     
     test_add_arrays()
     test_matrix_multiply()
