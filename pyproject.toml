@@ -10,4 +10,5 @@ dependencies = [
     "numba-cuda>=0.30.1",
     "numpy>=2.4.4",
     "pip>=26.1",
+    "torch>=2.11.0",
 ]

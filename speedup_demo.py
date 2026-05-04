@@ -24,7 +24,6 @@ def matrix_multiply(a, b, out):
     
     a_shared = cuda.shared.array((TPB, TPB), numba.float32)
     b_shared = cuda.shared.array((TPB, TPB), numba.float32)
-    out_shared = cuda.shared.array((TPB, TPB), numba.float32)
     
     i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
     j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
@@ -32,7 +31,7 @@ def matrix_multiply(a, b, out):
     local_i = cuda.threadIdx.x
     local_j = cuda.threadIdx.y
 
-    out_shared[local_i, local_j] = 0.0
+    tmp = numba.float32(0.0)
     for curr_block in range(max((size_a_cols + TPB - 1) // TPB, (size_b_rows + TPB - 1) // TPB)):
         if i < size_a_rows and (j % TPB + curr_block * TPB) < size_a_cols:
             a_shared[local_i, local_j] = a[i, j % TPB + curr_block * TPB]
@@ -47,13 +46,12 @@ def matrix_multiply(a, b, out):
         
         if i < size_a_rows and j < size_b_cols:
             for k in range(TPB):
-                out_shared[local_i, local_j] += a_shared[local_i, k] * b_shared[k, local_j]
+                tmp += a_shared[local_i, k] * b_shared[k, local_j]
         
         cuda.syncthreads()
     
     if i < size_a_rows and j < size_b_cols:
-        out[i, j] = out_shared[local_i, local_j]
-    
+        out[i, j] = tmp  
     
 def matmul(a, b, out):
     size_a_rows, size_a_cols = a.shape
@@ -112,8 +110,8 @@ def test_add_arrays():
 def test_matrix_multiply():
     print("Testing matrix_multiply...")
     
-    size_a_rows, size_a_cols = 3525, 128
-    size_b_rows, size_b_cols = 128, 4362
+    size_a_rows, size_a_cols = 1525, 1000
+    size_b_rows, size_b_cols = 1000, 2000
     
     a = np.random.rand(size_a_rows, size_a_cols).astype(np.float32)
     b = np.random.rand(size_b_rows, size_b_cols).astype(np.float32)
