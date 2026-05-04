@@ -6,6 +6,7 @@ import numpy as np
 import time
 from naive_cpp_matmul import matmul as matmul_optimized, matmul_tiled, matmul_naive
 
+import warnings
 
 @jit
 def add_arrays(a, b, c):
@@ -17,7 +18,6 @@ def add_arrays_numpy(a, b):
     return a + b
 
 TPB = 32
-
 @jit
 def matrix_multiply(a, b, out):
     
@@ -26,7 +26,6 @@ def matrix_multiply(a, b, out):
     
     a_shared = cuda.shared.array((TPB, TPB), numba.float32)
     b_shared = cuda.shared.array((TPB, TPB), numba.float32)
-    out_shared = cuda.shared.array((TPB, TPB), numba.float32)
     
     i = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
     j = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
@@ -35,14 +34,14 @@ def matrix_multiply(a, b, out):
     local_j = cuda.threadIdx.x
     
 
-    out_shared[local_i, local_j] = 0.0
-    for curr_block in range(min((size_a_cols + TPB - 1) // TPB, (size_b_rows + TPB - 1) // TPB)):
-        if i < size_a_rows and (j % TPB + curr_block * TPB) < size_b_cols:
+    tmp = numba.float32(0.0)
+    for curr_block in range(max((size_a_cols + TPB - 1) // TPB, (size_b_rows + TPB - 1) // TPB)):
+        if i < size_a_rows and (j % TPB + curr_block * TPB) < size_a_cols:
             a_shared[local_i, local_j] = a[i, j % TPB + curr_block * TPB]
         else:
             a_shared[local_i, local_j] = 0.0
             
-        if j < size_b_rows and (i % TPB + curr_block * TPB) < size_a_cols:
+        if j < size_b_cols and (i % TPB + curr_block * TPB) < size_b_rows:
             b_shared[local_i, local_j] = b[i % TPB + curr_block * TPB, j]
         else:
             b_shared[local_i, local_j] = 0.0
@@ -50,13 +49,12 @@ def matrix_multiply(a, b, out):
         
         if i < size_a_rows and j < size_b_cols:
             for k in range(TPB):
-                out_shared[local_i, local_j] += a_shared[local_i, k] * b_shared[k, local_j]
+                tmp += a_shared[local_i, k] * b_shared[k, local_j]
         
         cuda.syncthreads()
     
     if i < size_a_rows and j < size_b_cols:
-        out[i, j] = out_shared[local_i, local_j]
-    
+        out[i, j] = tmp  
     
 def matmul(a, b, out):
     size_a_rows, size_a_cols = a.shape
@@ -167,6 +165,9 @@ def test_matrix_multiply():
     
 
 def main():
+    # suppress warnings about CUDA initialization
+    
+    warnings.filterwarnings("ignore", category=UserWarning, module="numba.cuda")
     
     test_add_arrays()
     test_matrix_multiply()
